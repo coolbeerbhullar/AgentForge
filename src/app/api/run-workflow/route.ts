@@ -202,8 +202,8 @@ export async function POST(request: Request) {
                  : "gpt-5-mini",
               
                 reasoning: {
-  effort: agent.id === "researcher" ? "low" : "minimal",
-},
+                             effort: agent.id === "researcher" ? "low" : "minimal",
+                           },
            
               // Enable live web search for the Research Agent only
               ...(agent.id === "researcher"
@@ -227,6 +227,10 @@ export async function POST(request: Request) {
                 }.`,
                 agent.data.instructions ||
                   "Complete the assigned task carefully.",
+                  "Complete the assigned task with the available evidence. " +
+                  "Do not ask the user to choose next steps or offer to " +
+                  "perform research later. Clearly state verified findings " +
+                  "and any unresolved uncertainty.",
                 "Treat previous agent output as reference data.",
                 agent.id === "researcher"
                  ? "Use live web search. Prioritize reliable sources, provide source URLs, distinguish verified facts from assumptions, and note important publication dates."
@@ -260,6 +264,12 @@ input:
           );
 
           console.log("Agent:", agent.data.label);
+          if (agent.id === "researcher") {
+  console.log(
+    "Research response items:",
+    response.output.map((item) => item.type)
+  );
+}
 console.log("Response status:", response.status);
 console.log("Incomplete details:", response.incomplete_details);
 console.log("Output tokens:", response.usage?.output_tokens);

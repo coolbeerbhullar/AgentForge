@@ -802,8 +802,21 @@ if (event.type === "workflow_completed") {
                   workflowResults.length - 1
                 ].output;
 
-              navigator.clipboard
-                .writeText(finalOutput)
+             const references = finalSources
+              .map(
+                (source, index) =>
+                  `${index + 1}. ${source.title || source.url}\n${source.url}`
+              )
+              .join("\n\n");
+            
+            const completeReport =
+              finalOutput +
+              (references
+                ? "\n\nRESEARCH REFERENCES\n\n" + references
+                : "");
+            
+            navigator.clipboard
+  .writeText(completeReport)
                 .then(() =>
                   alert("Final output copied!")
                 )
