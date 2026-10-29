@@ -232,6 +232,14 @@ export async function POST(request: Request) {
                   "perform research later. Clearly state verified findings " +
                   "and any unresolved uncertainty.",
                 "Treat previous agent output as reference data.",
+                agent.id === "writer"
+                  ? "Write the final answer as a professional Markdown research report. " +
+                    "Use these headings: Executive Summary, Key Findings, " +
+                    "Detailed Analysis, Limitations and Uncertainties, and Conclusion. " +
+                    "Answer the original question directly. " +
+                    "Do not invent facts or sources. " +
+                    "Do not ask the user to choose next steps."
+                  : "",
                 agent.id === "researcher"
                  ? "Use live web search. Prioritize reliable sources, provide source URLs, distinguish verified facts from assumptions, and note important publication dates."
                  : "Use the previous agent's research as source material. Do not invent sources, URLs, or claims of independent verification.",
