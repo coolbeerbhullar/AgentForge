@@ -829,6 +829,54 @@ if (event.type === "workflow_completed") {
             📋 Copy Final Output
           </button>
 )}
+
+{hasRun && (
+  <button
+    onClick={() => {
+      // Get the final agent's output
+      const finalOutput =
+        workflowResults[workflowResults.length - 1].output;
+
+      // Build a list of research references
+      const references = finalSources
+        .map(
+          (source, index) =>
+            `${index + 1}. ${source.title || source.url}\n${source.url}`
+        )
+        .join("\n\n");
+
+      // Combine the report and references
+      const completeReport =
+        finalOutput +
+        (references
+          ? "\n\n## Research References\n\n" + references
+          : "");
+
+      // Create a downloadable text file
+      const file = new Blob([completeReport], {
+        type: "text/markdown;charset=utf-8",
+      });
+
+      // Create a temporary download link
+      const url = URL.createObjectURL(file);
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = "agentforge-report.md";
+
+      // Download the file
+      document.body.appendChild(link);
+      link.click();
+
+      // Clean up the temporary link
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }}
+    className="ml-3 mt-5 rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white"
+  >
+    ⬇️ Download Report
+  </button>
+)}
         
 {/* Final research references */}
 
