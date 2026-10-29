@@ -877,6 +877,118 @@ if (event.type === "workflow_completed") {
     ⬇️ Download Report
   </button>
 )}
+
+{hasRun && (
+  <button
+    onClick={async () => {
+      const { jsPDF } = await import("jspdf");
+
+      const pdf = new jsPDF();
+
+      const finalOutput =
+        workflowResults[workflowResults.length - 1].output;
+
+      const references = finalSources
+        .map(
+          (source, index) =>
+            `${index + 1}. ${source.title || source.url}\n${source.url}`
+        )
+        .join("\n\n");
+
+      const completeReport =
+        finalOutput +
+        (references
+          ? "\n\nRESEARCH REFERENCES\n\n" + references
+          : "");
+
+     // const lines = pdf.splitTextToSize(completeReport, 170);
+
+// Add the AgentForge report header
+pdf.setFont("helvetica", "bold");
+pdf.setFontSize(20);
+pdf.text("AgentForge", 20, 20);
+
+// Add the report subtitle
+pdf.setFontSize(13);
+pdf.text("AI Research Report", 20, 30);
+
+// Add the report generation date
+pdf.setFont("helvetica", "normal");
+pdf.setFontSize(10);
+pdf.text(
+  `Generated: ${new Date().toLocaleDateString("en-AU")}`,
+  20,
+  39
+);
+
+// Add a horizontal divider
+pdf.setDrawColor(150, 150, 150);
+pdf.line(20, 44, 190, 44);
+
+// Start the report below the header
+let y = 55;
+
+// Use normal text for the report body
+pdf.setFontSize(11);
+
+      // Split the report into individual lines
+const reportLines = completeReport.split("\n");
+
+for (const rawLine of reportLines) {
+  // Remove Markdown heading symbols and extra spaces
+  const line = rawLine.replace(/^#{1,6}\s+/, "").trim();
+
+  // Identify Markdown headings and our references heading
+  const isHeading =
+    /^#{1,6}\s+/.test(rawLine) ||
+    [
+      "Executive Summary",
+      "Key Findings",
+      "Detailed Analysis",
+      "Limitations and Uncertainties",
+      "Conclusion",
+      "Research References",
+      "RESEARCH REFERENCES",
+    ].includes(line);
+
+  // Leave a smaller gap for blank lines
+  if (!line) {
+    y += 3;
+    continue;
+  }
+
+  // Set font style
+  if (isHeading) {
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(14);
+    y += 4;
+  } else {
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(11);
+  }
+
+  // Wrap long text within page margins
+  const wrappedLines = pdf.splitTextToSize(line, 170);
+
+  for (const wrappedLine of wrappedLines) {
+    // Start a new page when needed
+    if (y > 280) {
+      pdf.addPage();
+      y = 20;
+    }
+
+    pdf.text(wrappedLine, 20, y);
+    y += isHeading ? 8 : 6;
+  }
+}
+
+pdf.save("agentforge-report.pdf");
+    }}
+    className="ml-3 mt-5 rounded-lg bg-purple-600 px-4 py-2 font-semibold text-white"
+  >
+    📄 Download PDF
+  </button>
+)}
         
 {/* Final research references */}
 
