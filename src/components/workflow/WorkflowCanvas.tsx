@@ -997,6 +997,12 @@ pdf.save("agentforge-report.pdf");
     <h3 className="mb-3 text-lg font-bold text-emerald-400">
       📚 Final Research References
     </h3>
+    <p className="mb-4 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-200">
+  ⚠️ Source verification reminder: A reference link does
+  not automatically verify every claim in this report.
+  Confirm important details such as product specifications,
+  prices, dates, and availability directly with the source.
+</p>
 
     {finalSources.length === 0 ? (
       <p className="text-sm text-amber-300">

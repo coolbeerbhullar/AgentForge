@@ -241,8 +241,18 @@ export async function POST(request: Request) {
                     "Do not ask the user to choose next steps."
                   : "",
                 agent.id === "researcher"
-                 ? "Use live web search. Prioritize reliable sources, provide source URLs, distinguish verified facts from assumptions, and note important publication dates."
-                 : "Use the previous agent's research as source material. Do not invent sources, URLs, or claims of independent verification.",
+  ? "Use live web search and prioritize reliable sources. " +
+    "Verify that each source directly supports the specific claim. " +
+    "For products, confirm the exact brand, model, size, and quantity. " +
+    "Prefer direct product pages over general retailer pages. " +
+    "Do not label a price as verified unless its source " +
+"clearly identifies the exact product variant and price. " +
+"If the source is a category page or search results page, " +
+"mark the price as unverified. " +
+    "For prices, distinguish advertised prices from verified checkout prices. " +
+    "Never treat a different product variant as an exact match. " +
+    "Provide source URLs and identify anything that cannot be verified."
+  : "Use the previous agent's research as source material. Do not invent sources, URLs, or claims of independent verification.",
               ].join("\n"),
               
 input:
