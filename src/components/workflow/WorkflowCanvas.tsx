@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useEffect } from "react";
 
 import {
   ReactFlow,
@@ -12,6 +12,7 @@ import {
   useNodesState,
   useEdgesState,
   BackgroundVariant,
+  
   type Node,
   type Edge,
   type Connection,
@@ -116,10 +117,42 @@ type AgentResult = {
   }[];
 };
 
+type SavedResearchReport = {
+  id: string;
+  task: string;
+  createdAt: string;
+  output: string;
+  sources: {
+    title: string;
+    url: string;
+  }[];
+};
+
 export default function WorkflowCanvas() {
   // ---------------------------
   // React Flow state
   // ---------------------------
+
+  const [researchHistory, setResearchHistory] =
+  useState<SavedResearchReport[]>([]);
+
+  useEffect(() => {
+  const savedHistory = localStorage.getItem(
+    "agentforge-research-history"
+  );
+
+  if (savedHistory) {
+    try {
+      const reports = JSON.parse(savedHistory);
+
+      if (Array.isArray(reports)) {
+        setResearchHistory(reports);
+      }
+    } catch (error) {
+      console.error("Unable to load research history:", error);
+    }
+  }
+}, []);
 
   const [nodes, setNodes, onNodesChange] =
     useNodesState(initialNodes);
@@ -350,6 +383,14 @@ const runWorkflow = async () => {
     const decoder = new TextDecoder();
     let buffer = "";
     let completedSuccessfully = false;
+   
+    // Keep completed results available during this workflow run
+const completedResults: {
+  agentId: string;
+  agentName: string;
+  output: string;
+  sources: { title: string; url: string }[];
+}[] = [];
 
     const handleEvent = (event: {
       type: string;
@@ -382,15 +423,21 @@ const runWorkflow = async () => {
           [id]: "completed",
         }));
 
-        setWorkflowResults((current) => [
-          ...current,
-          {
-            agentId: id,
-            agentName: event.agentName || "AI Agent",
-            output: event.output || "",
-            sources: event.sources || [],
-          },
-        ]);
+        const result = {
+  agentId: id,
+  agentName: event.agentName || "AI Agent",
+  output: event.output || "",
+  sources: event.sources || [],
+};
+
+// Store the result in our temporary list
+completedResults.push(result);
+
+// Update the React interface
+setWorkflowResults((current) => [
+  ...current,
+  result,
+]);
       }
 
       if (event.type === "workflow_failed") {
@@ -410,8 +457,52 @@ const runWorkflow = async () => {
 
 if (event.type === "workflow_completed") {
   completedSuccessfully = true;
-  setFinalSources(event.sources || []);
+
+  const sources = event.sources || [];
+
+  setFinalSources(sources);
   setHasRun(true);
+
+  // Only save a report if the workflow produced an output
+  const finalResult = completedResults[completedResults.length - 1];
+
+  if (finalResult?.output) {
+    const savedReport: SavedResearchReport = {
+      id: crypto.randomUUID(),
+      task: workflowTask.trim(),
+      createdAt: new Date().toISOString(),
+      output: finalResult.output,
+      sources,
+    };
+
+    try {
+      // Read existing reports directly from browser storage
+      const existing = localStorage.getItem(
+        "agentforge-research-history"
+      );
+
+      const parsed: unknown = existing ? JSON.parse(existing) : [];
+
+      const previousReports: SavedResearchReport[] =
+        Array.isArray(parsed) ? parsed : [];
+
+      // Store the newest report first
+      const updatedHistory = [
+        savedReport,
+        ...previousReports,
+      ].slice(0, 20);
+
+      localStorage.setItem(
+        "agentforge-research-history",
+        JSON.stringify(updatedHistory)
+      );
+
+      // Update the interface
+      setResearchHistory(updatedHistory);
+    } catch (error) {
+      console.error("Unable to save research history:", error);
+    }
+  }
 }
     };
 
@@ -1044,9 +1135,85 @@ pdf.save("agentforge-report.pdf");
     )}
   </div>
 )}
-  
+
         </div>
       )}
+
+        {/* Research History */}
+<div className="mt-6 rounded-lg border border-slate-600 bg-slate-800 p-5">
+  <h3 className="mb-3 text-lg font-bold text-emerald-400">
+    🕘 Research History
+  </h3>
+
+  {researchHistory.length === 0 ? (
+    <p className="text-sm text-slate-300">
+      No saved research reports yet.
+    </p>
+  ) : (
+    <div className="space-y-3">
+      {researchHistory.map((report) => (
+        <div
+          key={report.id}
+          className="rounded-lg border border-slate-600 bg-slate-700 p-3"
+        >
+          <p className="font-semibold text-white">
+            {report.task}
+          </p>
+
+          <p className="mt-1 text-xs text-slate-300">
+            {new Date(report.createdAt).toLocaleString("en-AU")}
+          </p>
+          <button
+  type="button"
+  onClick={() => {
+    setWorkflowTask(report.task);
+
+    setWorkflowResults([
+      {
+        agentId: "saved-report",
+        agentName: "Saved Research Report",
+        output: report.output,
+        sources: report.sources,
+      },
+    ]);
+
+    setFinalSources(report.sources);
+    setHasRun(true);
+    setRunError("");
+  }}
+  className="mt-3 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
+>
+  📂 Open Report
+</button>
+<button
+  type="button"
+  onClick={() => {
+    const confirmed = window.confirm(
+      "Are you sure you want to delete this saved report?"
+    );
+
+    if (!confirmed) return;
+
+    const updatedHistory = researchHistory.filter(
+      (item) => item.id !== report.id
+    );
+
+    localStorage.setItem(
+      "agentforge-research-history",
+      JSON.stringify(updatedHistory)
+    );
+
+    setResearchHistory(updatedHistory);
+  }}
+  className="ml-3 mt-3 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
+>
+  🗑️ Delete Report
+</button>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
     </div>
   );
 }
