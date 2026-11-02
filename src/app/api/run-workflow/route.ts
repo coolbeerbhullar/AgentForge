@@ -337,12 +337,19 @@ if (agent.id === "researcher") {
 }
 
           send({
-            type: "agent_completed",
-            agentId: agent.id,
-            agentName: agent.data.label,
-            output,
-            sources,
-          });
+  type: "agent_completed",
+  agentId: agent.id,
+  agentName: agent.data.label,
+  output,
+  sources,
+
+  // Token usage reported by OpenAI
+  usage: {
+    inputTokens: response.usage?.input_tokens ?? 0,
+    outputTokens: response.usage?.output_tokens ?? 0,
+    totalTokens: response.usage?.total_tokens ?? 0,
+  },
+});
 
           previousOutput = output;
         }

@@ -115,6 +115,11 @@ type AgentResult = {
     title: string;
     url: string;
   }[];
+    usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+  };
 };
 
 type SavedResearchReport = {
@@ -128,6 +133,14 @@ type SavedResearchReport = {
   }[];
 };
 
+type WorkflowTemplate = {
+  id: string;
+  name: string;
+  createdAt: string;
+  nodes: Node[];
+  edges: Edge[];
+};
+
 export default function WorkflowCanvas() {
   // ---------------------------
   // React Flow state
@@ -135,6 +148,9 @@ export default function WorkflowCanvas() {
 
   const [researchHistory, setResearchHistory] =
   useState<SavedResearchReport[]>([]);
+
+  const [workflowTemplates, setWorkflowTemplates] =
+  useState<WorkflowTemplate[]>([]);
 
   useEffect(() => {
   const savedHistory = localStorage.getItem(
@@ -151,6 +167,24 @@ export default function WorkflowCanvas() {
     } catch (error) {
       console.error("Unable to load research history:", error);
     }
+  }
+}, []);
+
+useEffect(() => {
+  try {
+    const saved = localStorage.getItem(
+      "agentforge-workflow-templates"
+    );
+
+    if (!saved) return;
+
+    const parsed: unknown = JSON.parse(saved);
+
+    if (Array.isArray(parsed)) {
+      setWorkflowTemplates(parsed);
+    }
+  } catch (error) {
+    console.error("Unable to load workflow templates:", error);
   }
 }, []);
 
@@ -173,8 +207,7 @@ export default function WorkflowCanvas() {
 
   const [workflowTask, setWorkflowTask] = useState("");
   const [isRunning, setIsRunning] = useState(false);
-  const [workflowResults, setWorkflowResults] =
-    useState<AgentResult[]>([]);
+  const [workflowResults, setWorkflowResults] = useState<AgentResult[]>([]);
   const [finalSources, setFinalSources] = useState<
   { title: string; url: string }[]
 >([]);
@@ -318,9 +351,77 @@ const [agentStatuses, setAgentStatuses] = useState<
   };
 
   // ---------------------------
+// Save workflow as a template
+// ---------------------------
+
+const saveWorkflowTemplate = () => {
+  // Ask for a name for the template
+  const name = window.prompt(
+    "Enter a name for this workflow template:"
+  );
+
+  // Stop if Cancel was clicked or the name is empty
+  if (!name || !name.trim()) return;
+
+  try {
+    // Read any templates already saved
+    const saved = localStorage.getItem(
+      "agentforge-workflow-templates"
+    );
+
+    const parsed: unknown = saved ? JSON.parse(saved) : [];
+
+    const templates = Array.isArray(parsed) ? parsed : [];
+
+    // Create the new template
+    const newTemplate = {
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      createdAt: new Date().toISOString(),
+      nodes,
+      edges,
+    };
+
+    // Add the new template to the beginning of the list
+    const updatedTemplates = [newTemplate, ...templates];
+
+    // Save the updated list to browser storage
+    localStorage.setItem(
+      "agentforge-workflow-templates",
+      JSON.stringify(updatedTemplates)
+    );
+    setWorkflowTemplates(updatedTemplates);
+
+    alert("Workflow template saved successfully!");
+  } catch (error) {
+    console.error("Unable to save workflow template:", error);
+    alert("Unable to save workflow template.");
+  }
+};
+
+  // ---------------------------
   // Run AI workflow
   // ---------------------------
+// Calculate token usage across all completed agents
+const totalUsage = workflowResults.reduce(
+  (totals, result) => {
+    return {
+      inputTokens:
+        totals.inputTokens + (result.usage?.inputTokens ?? 0),
 
+      outputTokens:
+        totals.outputTokens + (result.usage?.outputTokens ?? 0),
+
+      totalTokens:
+        totals.totalTokens + (result.usage?.totalTokens ?? 0),
+    };
+  },
+  {
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+  }
+);
   
 const runWorkflow = async () => {
   if (isRunning) return;
@@ -390,6 +491,11 @@ const completedResults: {
   agentName: string;
   output: string;
   sources: { title: string; url: string }[];
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+  };
 }[] = [];
 
     const handleEvent = (event: {
@@ -402,6 +508,12 @@ const completedResults: {
   title: string;
   url: string;
 }[];
+
+  usage?: {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+};
     }) => {
       if (event.type === "agent_started" && event.agentId) {
         const id = event.agentId;
@@ -423,11 +535,16 @@ const completedResults: {
           [id]: "completed",
         }));
 
-        const result = {
+      const result = {
   agentId: id,
   agentName: event.agentName || "AI Agent",
   output: event.output || "",
   sources: event.sources || [],
+  usage: event.usage || {
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+  },
 };
 
 // Store the result in our temporary list
@@ -573,7 +690,14 @@ if (event.type === "workflow_completed") {
         >
           💾 Save Workflow
         </button>
-
+      <button
+  type="button"
+  onClick={saveWorkflowTemplate}
+  disabled={isRunning}
+  className="ml-3 mt-3 rounded-lg bg-violet-600 px-4 py-2 font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+>
+  📁 Save as Template
+</button>
         <button
           onClick={loadWorkflow}
           disabled={isRunning}
@@ -582,7 +706,6 @@ if (event.type === "workflow_completed") {
           📂 Load Workflow
         </button>
       </div>
-
       {/* Task input */}
 
       <div className="mb-5 rounded-xl border border-slate-700 bg-slate-900 p-4">
@@ -859,6 +982,29 @@ if (event.type === "workflow_completed") {
                 <div className="whitespace-pre-wrap break-words text-sm leading-7 text-slate-200">
                   {result.output}
                 </div>
+
+                {/* Token usage for this agent */}
+{result.usage && (
+  <div className="mt-3 rounded-lg border border-slate-600 bg-slate-900 p-3">
+    <p className="mb-2 text-sm font-semibold text-emerald-400">
+      📊 Token Usage
+    </p>
+
+    <div className="flex flex-wrap gap-4 text-sm text-slate-300">
+      <span>
+        Input: {result.usage.inputTokens.toLocaleString()}
+      </span>
+
+      <span>
+        Output: {result.usage.outputTokens.toLocaleString()}
+      </span>
+
+      <span>
+        Total: {result.usage.totalTokens.toLocaleString()}
+      </span>
+    </div>
+  </div>
+)}
                 
 {result.sources && result.sources.length > 0 && (
   <div className="mt-4 border-t border-slate-600 pt-4">
@@ -1138,7 +1284,29 @@ pdf.save("agentforge-report.pdf");
 
         </div>
       )}
+      {/* Workflow Token Usage Summary */}
+{workflowResults.length > 0 &&
+  workflowResults.some((result) => result.usage) && (
+    <div className="mt-6 rounded-lg border border-slate-600 bg-slate-800 p-5 text-white">
+      <h3 className="mb-3 text-lg font-bold text-emerald-400">
+        📊 Workflow Token Usage
+      </h3>
 
+      <div className="flex flex-wrap gap-5 text-sm">
+        <p>
+          Input: {totalUsage.inputTokens.toLocaleString()}
+        </p>
+
+        <p>
+          Output: {totalUsage.outputTokens.toLocaleString()}
+        </p>
+
+        <p className="font-bold">
+          Total: {totalUsage.totalTokens.toLocaleString()}
+        </p>
+      </div>
+    </div>
+  )}
         {/* Research History */}
 <div className="mt-6 rounded-lg border border-slate-600 bg-slate-800 p-5">
   <h3 className="mb-3 text-lg font-bold text-emerald-400">
@@ -1208,6 +1376,84 @@ pdf.save("agentforge-report.pdf");
   className="ml-3 mt-3 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
 >
   🗑️ Delete Report
+</button>
+        </div>
+      ))}
+    </div>
+  )}
+</div>
+
+{/* Saved Workflow Templates */}
+<div className="mt-6 rounded-lg border border-slate-600 bg-slate-800 p-5">
+  <h3 className="mb-3 text-lg font-bold text-violet-400">
+    📁 Saved Workflow Templates
+  </h3>
+
+  {workflowTemplates.length === 0 ? (
+    <p className="text-sm text-slate-300">
+      No workflow templates saved yet.
+    </p>
+  ) : (
+    <div className="space-y-3">
+      {workflowTemplates.map((template) => (
+        <div
+          key={template.id}
+          className="rounded-lg border border-slate-600 bg-slate-700 p-3"
+        >
+          <p className="font-semibold text-white">
+            {template.name}
+          </p>
+
+          <p className="mt-1 text-xs text-slate-300">
+            {template.nodes.length} agents •{" "}
+            {template.edges.length} connections
+          </p>
+
+          <button
+            type="button"
+            disabled={isRunning}
+            onClick={() => {
+              setNodes(template.nodes);
+              setEdges(template.edges);
+              setSelectedAgentId(null);
+              setWorkflowResults([]);
+              setFinalSources([]);
+              setHasRun(false);
+              setRunError("");
+            }}
+            className="mt-3 rounded-lg bg-violet-600 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+          >
+            📂 Load Template
+          </button>
+          <button
+  type="button"
+  disabled={isRunning}
+  onClick={() => {
+    const confirmed = window.confirm(
+      `Delete the template "${template.name}"?`
+    );
+
+    if (!confirmed) return;
+
+    const updatedTemplates = workflowTemplates.filter(
+      (item) => item.id !== template.id
+    );
+
+    try {
+      localStorage.setItem(
+        "agentforge-workflow-templates",
+        JSON.stringify(updatedTemplates)
+      );
+
+      setWorkflowTemplates(updatedTemplates);
+    } catch (error) {
+      console.error("Unable to delete template:", error);
+      alert("Unable to delete workflow template.");
+    }
+  }}
+  className="ml-3 mt-3 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
+>
+  🗑️ Delete Template
 </button>
         </div>
       ))}
