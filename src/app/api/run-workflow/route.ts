@@ -83,6 +83,7 @@ export async function POST(request: Request) {
     for (const edge of edges) {
       if (
         !edge ||
+        edge.source === edge.target ||
         !nodeMap.has(edge.source) ||
         !nodeMap.has(edge.target) ||
         next.has(edge.source)
@@ -367,7 +368,9 @@ if (agent.id === "researcher") {
             type: "workflow_failed",
             agentId: activeAgent?.id ?? null,
             message:
-              "Execution failed. Check the VS Code terminal.",
+  "An error occurred while running the AI workflow. " +
+  "Please try again. If the problem continues, " +
+  "check the application server logs.",
           });
         }
       } finally {

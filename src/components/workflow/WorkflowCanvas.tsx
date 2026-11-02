@@ -246,7 +246,29 @@ const [agentStatuses, setAgentStatuses] = useState<
       )
     );
   };
+   const resetWorkflow = () => {
+  if (isRunning) return;
 
+  const confirmed = window.confirm(
+    "Reset workflow to the default agents? Unsaved changes will be lost."
+  );
+
+  if (!confirmed) return;
+
+  setNodes(initialNodes.map((node) => ({
+    ...node,
+    position: { ...node.position },
+    data: { ...node.data },
+  })));
+
+  setEdges(initialEdges.map((edge) => ({ ...edge })));
+
+  setWorkflowTask("");
+  setWorkflowResults([]);
+  setAgentStatuses({});
+  setRunError("");
+  setHasRun(false);
+};
   // ---------------------------
   // Add new agent
   // ---------------------------
@@ -437,6 +459,71 @@ const runWorkflow = async () => {
     );
     return;
   }
+  // Ensure all agents form one connected workflow
+// Validate that the agents form one directed chain
+if (nodes.length === 0) {
+  setRunError("Add at least one agent before running.");
+  return;
+}
+
+if (edges.length !== nodes.length - 1) {
+  setRunError(
+    "Invalid workflow: connect all agents in one chain."
+  );
+  return;
+}
+
+const nodeIds = new Set(nodes.map((node) => node.id));
+
+const incoming = new Map<string, number>();
+const outgoing = new Map<string, number>();
+
+for (const node of nodes) {
+  incoming.set(node.id, 0);
+  outgoing.set(node.id, 0);
+}
+
+for (const edge of edges) {
+  if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
+    setRunError("Invalid workflow: a connection points to a missing agent.");
+    return;
+  }
+
+  incoming.set(edge.target, (incoming.get(edge.target) ?? 0) + 1);
+  outgoing.set(edge.source, (outgoing.get(edge.source) ?? 0) + 1);
+}
+
+const startNodes = nodes.filter(
+  (node) => incoming.get(node.id) === 0
+);
+
+const validDegrees = nodes.every(
+  (node) =>
+    (incoming.get(node.id) ?? 0) <= 1 &&
+    (outgoing.get(node.id) ?? 0) <= 1
+);
+
+if (startNodes.length !== 1 || !validDegrees) {
+  setRunError(
+    "Invalid workflow: agents must form one connected chain without branches or cycles."
+  );
+  return;
+}
+
+const visited = new Set<string>();
+let currentId: string | undefined = startNodes[0].id;
+
+while (currentId && !visited.has(currentId)) {
+  visited.add(currentId);
+  currentId = edges.find((edge) => edge.source === currentId)?.target;
+}
+
+if (visited.size !== nodes.length || currentId !== undefined) {
+  setRunError(
+    "Invalid workflow: check for disconnected agents or circular connections."
+  );
+  return;
+}
 
   setIsRunning(true);
   setRunError("");
@@ -674,38 +761,53 @@ if (event.type === "workflow_completed") {
 
       {/* Workflow toolbar */}
 
-      <div className="mb-4 flex flex-wrap gap-3">
-        <button
-          onClick={addAgent}
-          disabled={isRunning}
-          className="rounded-lg bg-violet-600 px-4 py-2 font-semibold text-white disabled:opacity-50"
-        >
-          + Add Agent
-        </button>
+<div className="mb-4 flex flex-wrap items-center gap-3">
+  <button
+    type="button"
+    onClick={addAgent}
+    disabled={isRunning}
+    className="inline-flex h-12 items-center justify-center rounded-lg bg-violet-600 px-5 font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:brightness-100"
+  >
+    + Add Agent
+  </button>
 
-        <button
-          onClick={saveWorkflow}
-          disabled={isRunning}
-          className="rounded-lg bg-emerald-600 px-4 py-2 font-semibold text-white disabled:opacity-50"
-        >
-          💾 Save Workflow
-        </button>
-      <button
+  <button
+    type="button"
+    onClick={saveWorkflow}
+    disabled={isRunning}
+    className="inline-flex h-12 items-center justify-center rounded-lg bg-emerald-600 px-5 font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:brightness-100"
+  >
+    💾 Save Workflow
+  </button>
+
+  <button
+    type="button"
+    onClick={saveWorkflowTemplate}
+    disabled={isRunning}
+    className="inline-flex h-12 items-center justify-center rounded-lg bg-violet-600 px-5 font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:brightness-100"
+  >
+    📁 Save as Template
+  </button>
+
+  <button
+    type="button"
+    onClick={loadWorkflow}
+    disabled={isRunning}
+    className="inline-flex h-12 items-center justify-center rounded-lg bg-blue-600 px-5 font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:brightness-100"
+  >
+    📂 Load Workflow
+  </button>
+
+  <button
   type="button"
-  onClick={saveWorkflowTemplate}
+  onClick={resetWorkflow}
   disabled={isRunning}
-  className="ml-3 mt-3 rounded-lg bg-violet-600 px-4 py-2 font-semibold text-white hover:bg-violet-500 disabled:opacity-50"
+  className="inline-flex h-12 items-center justify-center rounded-lg border border-slate-500 bg-slate-700 px-5 font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:brightness-125 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:brightness-100"
 >
-  📁 Save as Template
+  ↺ Reset Workflow
 </button>
-        <button
-          onClick={loadWorkflow}
-          disabled={isRunning}
-          className="rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white disabled:opacity-50"
-        >
-          📂 Load Workflow
-        </button>
-      </div>
+</div>
+
       {/* Task input */}
 
       <div className="mb-5 rounded-xl border border-slate-700 bg-slate-900 p-4">
@@ -753,13 +855,22 @@ if (event.type === "workflow_completed") {
         </p>
 
         {runError && (
-          <div
-            role="alert"
-            className="mt-3 rounded-lg border border-red-700 bg-red-950 p-3 text-red-300"
-          >
-            {runError}
-          </div>
-        )}
+  <div
+    role="alert"
+    className="mt-3 flex items-start justify-between gap-3 rounded-lg border border-red-700 bg-red-950 p-3 text-red-300"
+  >
+    <span>{runError}</span>
+
+    <button
+      type="button"
+      onClick={() => setRunError("")}
+      aria-label="Dismiss error"
+      className="rounded px-2 font-bold text-red-300 hover:bg-red-900"
+    >
+      ✕
+    </button>
+  </div>
+)}
       </div>
 
       
