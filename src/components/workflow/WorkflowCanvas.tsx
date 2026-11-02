@@ -170,23 +170,55 @@ export default function WorkflowCanvas() {
   }
 }, []);
 
+
 useEffect(() => {
-  try {
-    const saved = localStorage.getItem(
-      "agentforge-workflow-templates"
-    );
+  let cancelled = false;
 
-    if (!saved) return;
+  const loadCloudTemplates = async () => {
+    try {
+      const response = await fetch("/api/workflow-templates", {
+        cache: "no-store",
+      });
 
-    const parsed: unknown = JSON.parse(saved);
+      if (!response.ok) {
+        throw new Error("Unable to load cloud templates.");
+      }
 
-    if (Array.isArray(parsed)) {
-      setWorkflowTemplates(parsed);
+      const result = await response.json();
+
+      const cloudTemplates: WorkflowTemplate[] = (
+        result.templates ?? []
+      ).map(
+        (template: {
+          id: string;
+          name: string;
+          created_at: string;
+          nodes: WorkflowTemplate["nodes"];
+          edges: WorkflowTemplate["edges"];
+        }) => ({
+          id: template.id,
+          name: template.name,
+          createdAt: template.created_at,
+          nodes: template.nodes,
+          edges: template.edges,
+        })
+      );
+
+      if (!cancelled) {
+        setWorkflowTemplates(cloudTemplates);
+      }
+    } catch (error) {
+      console.error("Unable to load cloud templates:", error);
     }
-  } catch (error) {
-    console.error("Unable to load workflow templates:", error);
-  }
+  };
+
+  void loadCloudTemplates();
+
+  return () => {
+    cancelled = true;
+  };
 }, []);
+
 
   const [nodes, setNodes, onNodesChange] =
     useNodesState(initialNodes);
@@ -376,50 +408,79 @@ const [agentStatuses, setAgentStatuses] = useState<
 // Save workflow as a template
 // ---------------------------
 
-const saveWorkflowTemplate = () => {
-  // Ask for a name for the template
+
+const saveWorkflowTemplate = async () => {
+  if (isRunning) return;
+
+  // Ask for the template name
   const name = window.prompt(
     "Enter a name for this workflow template:"
   );
 
-  // Stop if Cancel was clicked or the name is empty
   if (!name || !name.trim()) return;
 
+  const templateName = name.trim();
+
   try {
-    // Read any templates already saved
+    // Step 1: Send the template to our Next.js API
+    const response = await fetch("/api/workflow-templates", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: templateName,
+        nodes,
+        edges,
+      }),
+    });
+
+    if (!response.ok) {
+      const result = await response.json();
+      throw new Error(result.error || "Cloud save failed.");
+    }
+
+    // Step 2: Receive the saved template from Supabase
+    const result = await response.json();
+    const cloudTemplate = result.template;
+
+    // Step 3: Keep a local backup
     const saved = localStorage.getItem(
       "agentforge-workflow-templates"
     );
 
     const parsed: unknown = saved ? JSON.parse(saved) : [];
-
     const templates = Array.isArray(parsed) ? parsed : [];
 
-    // Create the new template
     const newTemplate = {
-      id: crypto.randomUUID(),
-      name: name.trim(),
-      createdAt: new Date().toISOString(),
+      id: cloudTemplate.id,
+      name: cloudTemplate.name,
+      createdAt: cloudTemplate.created_at,
       nodes,
       edges,
     };
 
-    // Add the new template to the beginning of the list
     const updatedTemplates = [newTemplate, ...templates];
 
-    // Save the updated list to browser storage
     localStorage.setItem(
       "agentforge-workflow-templates",
       JSON.stringify(updatedTemplates)
     );
+
     setWorkflowTemplates(updatedTemplates);
 
-    alert("Workflow template saved successfully!");
+    alert("Workflow template saved to Supabase successfully!");
   } catch (error) {
     console.error("Unable to save workflow template:", error);
-    alert("Unable to save workflow template.");
+
+    alert(
+      error instanceof Error
+        ? error.message
+        : "Unable to save workflow template."
+    );
   }
 };
+
 
   // ---------------------------
   // Run AI workflow
@@ -773,29 +834,11 @@ if (event.type === "workflow_completed") {
 
   <button
     type="button"
-    onClick={saveWorkflow}
-    disabled={isRunning}
-    className="inline-flex h-12 items-center justify-center rounded-lg bg-emerald-600 px-5 font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:brightness-100"
-  >
-    💾 Save Workflow
-  </button>
-
-  <button
-    type="button"
     onClick={saveWorkflowTemplate}
     disabled={isRunning}
     className="inline-flex h-12 items-center justify-center rounded-lg bg-violet-600 px-5 font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:brightness-100"
   >
     📁 Save as Template
-  </button>
-
-  <button
-    type="button"
-    onClick={loadWorkflow}
-    disabled={isRunning}
-    className="inline-flex h-12 items-center justify-center rounded-lg bg-blue-600 px-5 font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 disabled:hover:brightness-100"
-  >
-    📂 Load Workflow
   </button>
 
   <button
@@ -1536,32 +1579,77 @@ pdf.save("agentforge-report.pdf");
           >
             📂 Load Template
           </button>
-          <button
+  <button
   type="button"
   disabled={isRunning}
-  onClick={() => {
-    const confirmed = window.confirm(
-      `Delete the template "${template.name}"?`
-    );
+onClick={async () => {
+  if (isRunning) return;
 
-    if (!confirmed) return;
+  const confirmed = window.confirm(
+    `Permanently delete "${template.name}" from Supabase?`
+  );
 
-    const updatedTemplates = workflowTemplates.filter(
-      (item) => item.id !== template.id
-    );
+  if (!confirmed) return;
 
-    try {
-      localStorage.setItem(
-        "agentforge-workflow-templates",
-        JSON.stringify(updatedTemplates)
+  try {
+    const response = await fetch("/api/workflow-templates", {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: template.id,
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        result.error || "Unable to delete cloud template."
       );
-
-      setWorkflowTemplates(updatedTemplates);
-    } catch (error) {
-      console.error("Unable to delete template:", error);
-      alert("Unable to delete workflow template.");
     }
-  }}
+
+    // Refresh the template list from Supabase
+    const refreshResponse = await fetch("/api/workflow-templates", {
+      cache: "no-store",
+    });
+
+    if (!refreshResponse.ok) {
+      throw new Error("Template deleted, but list refresh failed.");
+    }
+
+    const refreshResult = await refreshResponse.json();
+
+    const cloudTemplates: WorkflowTemplate[] = (
+      refreshResult.templates ?? []
+    ).map(
+      (item: {
+        id: string;
+        name: string;
+        created_at: string;
+        nodes: WorkflowTemplate["nodes"];
+        edges: WorkflowTemplate["edges"];
+      }) => ({
+        id: item.id,
+        name: item.name,
+        createdAt: item.created_at,
+        nodes: item.nodes,
+        edges: item.edges,
+      })
+    );
+
+    setWorkflowTemplates(cloudTemplates);
+  } catch (error) {
+    console.error("Unable to delete cloud template:", error);
+
+    alert(
+      error instanceof Error
+        ? error.message
+        : "Unable to delete workflow template."
+    );
+  }
+}}
   className="ml-3 mt-3 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500 disabled:opacity-50"
 >
   🗑️ Delete Template
